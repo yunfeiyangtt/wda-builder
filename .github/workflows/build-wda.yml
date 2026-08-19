@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Clone WebDriverAgent
         run: |
@@ -68,7 +68,7 @@ jobs:
           ls -la WebDriverAgent.ipa
 
       - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: WebDriverAgent-IPA
           path: WebDriverAgent/WebDriverAgent.ipa
@@ -76,7 +76,7 @@ jobs:
 
       - name: Create Release
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v33
         with:
           tag_name: wda-${{ github.run_number }}
           name: WebDriverAgent Build ${{ github.run_number }}
