@@ -1,11 +1,9 @@
 permissions:
   contents: write
-name: Build WebDriverAgent IPA
+name: Build Signed WebDriverAgent IPA
 
 on:
-  workflow_dispatch:  # Manual trigger
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,80 +20,78 @@ jobs:
           git fetch --tags
           echo "WDA Version: $(git describe --tags --always)"
 
-      - name: Show Xcode version
-        run: |
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-path
-
-      - name: Build WebDriverAgent for iOS Device
+      - name: Build Signed WebDriverAgent
         run: |
           cd WebDriverAgent
 
-          # Build for generic iOS device (no signing - will be re-signed with Sideloadly)
+          # 开启自动签名（使用 GitHub Secrets 里的 Apple ID 凭据）
+          # 免费 Apple ID 会自动创建 Personal Team 并签名
+          # -allowProvisioningUpdates 允许 xcodebuild 自动申请证书和 provisioning profile
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
             -destination 'generic/platform=iOS' \
             -derivedDataPath ./build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=YES
+        env:
+          # 让 xcodebuild 用 Apple ID 自动登录认证
+          AC_APPLE_ID: ${{ 736211295@qq.com }}
+          AC_PASSWORD: ${{ njdx-oegi-xmci-qcwu }}
 
       - name: Find and Package App
         run: |
           cd WebDriverAgent
-
-          # Find the built .app
           APP_PATH=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
           echo "Found app at: $APP_PATH"
-
           if [ -z "$APP_PATH" ]; then
             echo "App not found, listing build directory:"
             find ./build -name "*.app" -type d
             exit 1
           fi
-
-          # Create Payload directory for IPA
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-
-          # Create IPA
           zip -r WebDriverAgent.ipa Payload
-
           echo "IPA created successfully!"
           ls -la WebDriverAgent.ipa
+
+      - name: Verify Signing
+        run: |
+          cd WebDriverAgent
+          APP_PATH=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
+          echo "=== Code Signature Info ==="
+          codesign -dv --verbose=2 "$APP_PATH" 2>&1 || echo "codesign check failed"
+          echo "=== Embedded Provisioning Profile ==="
+          ls "$APP_PATH/embedded.mobileprovision" 2>/dev/null && echo "PROFILE FOUND" || echo "NO PROFILE - signing may have failed"
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: WebDriverAgent-IPA
+          name: WebDriverAgent-Signed-IPA
           path: WebDriverAgent/WebDriverAgent.ipa
           retention-days: 30
 
       - name: Create Release
-        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: wda-${{ github.run_number }}
-          name: WebDriverAgent Build ${{ github.run_number }}
+          tag_name: wda-signed-${{ github.run_number }}
+          name: Signed WebDriverAgent Build ${{ github.run_number }}
           files: WebDriverAgent/WebDriverAgent.ipa
           body: |
-            ## WebDriverAgent IPA
+            ## Signed WebDriverAgent IPA
 
-            Built from appium/WebDriverAgent
+            This IPA is signed with a free Apple ID.
 
             ### Installation:
             1. Download `WebDriverAgent.ipa`
-            2. Open Sideloadly
-            3. Drag the IPA into Sideloadly
-            4. Enter your Apple ID
-            5. Click Start
+            2. Drag into Sideloadly (or install via tidevice)
+            3. Enter Apple ID
+            4. Click Start
 
             ### After Installation:
-            - Trust the app: Settings > General > VPN & Device Management
+            - Trust the app: Settings > General > VPN & Device Management > Trust
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
